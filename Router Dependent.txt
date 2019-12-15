@@ -1,0 +1,139 @@
+Create subint for router on a stick --------------------------------------
+
+int g0/0.10
+encapsulate dot1q 10 !MUST DO ENCAP BEFORE IP ADD
+ip add 192.168.10.1 255.255.255.0
+
+ROUTER IPv6 Routing -------------------------------------------
+
+ipv6 unicast-routing
+
+ROUTER ACL's --------------------------------------------------
+[stnd acls]
+access-list 1 deny host 192.168.1.100 [deny all traffic from host .100]
+
+ROUTER OSPF----------------------------------------------------
+
+router ospf 1
+router id 1.1.1.1
+passive g0/0
+passive g0/1
+network 192.168.2.0 0.0.0.255 area 0 (s0/0/0 or 10.10.10.2)
+!redistribute static routes: default-information originate
+
+router ospf 1 
+
+int g0/0
+ip ospf priority 1 (set as DB or BDB)
+
+ip ospf message-digest-key 1 md5 cisco
+!(area auth)
+
+router ospf 1
+area 0 authentication message-digest
+
+!(int auth)	
+int g0/0
+ip ospf authentication message-digest
+
+passive interface default
+
+ROUTER static routes-----------------------------------------
+
+ip route 192.168.2.0 255.255.255.0 192.169.1.1
+ip route 0.0.0.0 0.0.0.0 s0/0/0
+ipv6 route ::0/0 s0/0/0
+
+ROUTER EIGRP------------------------------------------------------
+
+router eigrp 54 [autonomous sys number, all in "area" need same AS]
+network 192.168.1.0 0.0.0.255
+network 192.168.2.0 0.0.0.255
+passive-interface g0/0
+no auto-summary (ios 15.1 > no auto summary is default)
+
+ADV EIGRP -------------------------------------------------------
+
+!manual summary on interface you want to send adverts on
+int s0/0/0
+ip summary-address eigrp 54 192.168.1.0 255.255.255.254
+
+!default route propagation
+redistribute static
+redistribute ospf
+
+!limit bandwidth
+int g0/0
+ip bandwidth-percent eigrp 65
+
+!man summary/timers
+int g0/0
+ip summary-address eigrp 54 192.168.0.0 255.255.255.254
+ip hello-interval
+ip hold-time
+
+!unequal load balancing
+traffic share balance
+maximum-paths [value]
+
+!authentication per int
+
+keychain
+key [key id]
+key-string [password]
+
+int g0/0
+ip authentication key-chain eigrp 54 [key id]
+ip authentication mode eigrp 54 md5
+
+ROUTER PPP, PAP, CHAP ----------------------------------------------
+
+int s0/0/0
+encapsulation ppp
+
+PAP/CHAP encryption
+username R2 secret cisco
+int s0/0/0
+
+_PAP
+ppp authentication pap
+pap sent-username R1 secret cisco (vice versa for R2)
+
+_CHAP
+ppp authentication chap
+
+ROUTER Frame Relay -------------------------------------------------------
+
+(static mappings)
+int s0/0/0
+encapsulation frame-relay
+frame-relay map ip(v6) 10.1.1.1 102 broadcast
+
+(LMI config)
+int s0/0/0
+encapsulation fram-relay
+frame-relay lmi-type [ansi/cisco]
+
+(FR switching - incoming dlci, switch to port with new dlci)
+int s0/0/0
+frame-relay intf-type dce
+frame-relay route 301 int s0/0/1 103 (take dlci 301, output to s0/0/1 w/ dlci 103)
+int s0/0/1
+frame-relay intf-type dce 
+frame-relay route 103 int s0/0/0 301
+
+(EXAMPLE)
+interface Serial0/0/0
+ no ip address
+ encapsulation frame-relay
+ frame-relay intf-type dce
+ frame-relay route 103 interface Serial0/0/1 301
+!
+interface Serial0/0/1
+ no ip address
+ encapsulation frame-relay
+ clock rate 128000
+ frame-relay intf-type dce
+ frame-relay route 301 interface Serial0/0/0 103
+
+show frame-relay route

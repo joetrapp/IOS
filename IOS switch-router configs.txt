@@ -1,0 +1,301 @@
+BASIC CONFIG -------------------------------------------------------
+
+enable
+config terminal
+service password
+hostname Callisto
+ip ssh version 2
+no cdp run
+banner motd "Authorized access only!"
+line con 0
+logging sync
+!password cisco
+!login
+
+![username login]
+!ip domain-name cisco.com
+!crypto key gen RSA
+!username admin privledge 15 secret cisco
+
+erase startup-config
+
+line vty 0 15
+transport input ssh
+!password cisco
+login [local]
+exit
+
+SWTICH port security -------------------------------------------------------
+
+int range f0/1-24
+switchport mode access
+switchport port-security mac-address sticky
+switchport port-security maximum 2
+switchport port-security violation shutdown
+
+SWITCH shutdown all unused ports -------------------------------------------------------
+
+int ra f0/1-24
+shutdown
+int ra g0/1-2
+shutdown
+
+SWITCH Create vlans ---------------------------------------------------------
+
+vlan 10
+vlan 20
+vlan 30
+vlan 40
+vlan 99
+
+SWITCH Assign ports to vlans ------------------------------------------------
+
+int f0/1
+switchport mode access
+switchport access vlan 10
+
+SWITCH Assign trunk lines ----------------------------------------------------
+
+int g0/1
+switchport mode trunk
+switchport trunk vlan allowed 10,20,30,40,99 [native]
+
+ROUTER Create subint for router on a stick --------------------------------------
+
+int g0/0.10
+encapsulate dot1q 10 !MUST DO ENCAP BEFORE IP ADD
+ip add 192.168.10.1 255.255.255.0
+
+SWITCH Switch spanning tree mode (Multi vlan) -------------------------------------------
+
+spanning-tree mode rapid-pvst
+spanning-tree vlan #,#,# [root] [primary/secondary]
+OPTIONAL
+spanning-tree portfast
+spanning-tree bpduguard enable
+
+SWITCH etherchannel (NIC teaming) --------------------------------------------------
+
+int ra g0/1-2
+shutdown
+channel-group 1 mode active (LACP)	
+channel-group 1 mode desirable (PAGP-Cisco Proprietery)
+
+int port-channel 1
+switchport mode trunk
+switchport trunk allowed vlan #,# (or switchport trunk native vlan 99)
+int ra g0/1-2
+no shutdown
+
+ROUTER IPv6 Routing -------------------------------------------
+
+ipv6 unicast-routing
+
+ROUTER ACL's --------------------------------------------------
+
+!ACL's will process first before ANY translation
+
+!stnd acls
+access-list 1 deny host 192.168.1.100 !deny all traffic from host .100
+
+!ext named acls
+ip access-list WEB
+permit tcp any host 209.165.10.249 eq 80 !permit any http traffic to 209
+permit tcp any any est !allow anybody in that was first established from the inside
+permit icmp any any
+
+ROUTER OSPF----------------------------------------------------
+
+router ospf 1
+router id 1.1.1.1
+passive g0/0
+passive g0/1
+network 192.168.2.0 0.0.0.255 area 0 (s0/0/0 or 10.10.10.2)
+!redistribute static routes: default-information originate
+
+router ospf 1 
+
+int g0/0
+ip ospf priority 1 (set as DB or BDB)
+
+ip ospf message-digest-key 1 md5 cisco
+!(area auth)
+
+router ospf 1
+area 0 authentication message-digest
+
+!(int auth)	
+int g0/0
+ip ospf authentication message-digest
+
+passive interface default
+
+ROUTER static routes-----------------------------------------
+
+ip route 192.168.2.0 255.255.255.0 192.169.1.1
+ip route 0.0.0.0 0.0.0.0 s0/0/0
+ipv6 route ::0/0 s0/0/0
+
+ROUTER DHCP ------------------------------------------------------
+
+ip dhcp excluded-address 192.168.1.1 192.168.1.10
+ip dhcp pool LAN
+network 192.168.1.0 255.255.255.0 !enables dhcp
+default-router 192.168.1.1
+dns-server 192.168.1.1
+
+ROUTER EIGRP ------------------------------------------------------
+
+router eigrp 54 [autonomous sys number, all in "area" need same AS]
+network 192.168.1.0 0.0.0.255
+network 192.168.2.0 0.0.0.255
+passive-interface g0/0
+no auto-summary (ios 15.1 > no auto summary is default)
+
+ADV EIGRP -------------------------------------------------------
+
+!manual summary on interface you want to send adverts on
+int s0/0/0
+ip summary-address eigrp 54 192.168.1.0 255.255.255.254
+
+!default route propagation
+redistribute static
+redistribute ospf
+
+!limit bandwidth
+int g0/0
+ip bandwidth-percent eigrp 65
+
+!man summary/timers
+int g0/0
+ip summary-address eigrp 54 192.168.0.0 255.255.255.254
+ip hello-interval
+ip hold-time
+
+!unequal load balancing
+traffic share balance
+maximum-paths [value]
+
+!authentication per int
+
+keychain
+key [key id]
+key-string [password]
+
+int g0/0
+ip authentication key-chain eigrp 54 [key id]
+ip authentication mode eigrp 54 md5
+
+IMAGES and LICENSES -------------------------------------------------------
+
+copy tftp: flash:
+[address of tftp server]
+[src filename]
+
+boot system flash [image name]
+reload
+show version
+license install [location ie 172.16.31.15/name]
+reload
+
+!evalu license
+license accept end user agreement
+
+license boot module [module name] technology package [package name]
+
+license save [location ie flash0:]
+license install
+
+ROUTER PPP, PAP, CHAP ----------------------------------------------
+
+int s0/0/0
+encapsulation ppp
+
+PAP/CHAP encryption
+username R2 secret cisco
+int s0/0/0
+
+_PAP
+ppp authentication pap
+pap sent-username R1 secret cisco (vice versa for R2)
+
+_CHAP
+ppp authentication chap
+
+ROUTER Frame Relay -------------------------------------------------------
+
+(static mappings)
+int s0/0/0
+encapsulation frame-relay
+frame-relay map ip(v6) 10.1.1.1 102 broadcast
+
+(LMI config)
+int s0/0/0
+encapsulation fram-relay
+frame-relay lmi-type [ansi/cisco]
+
+(FR switching - incoming dlci, switch to port with new dlci)
+int s0/0/0
+frame-relay intf-type dce
+frame-relay route 301 int s0/0/1 103 (take dlci 301, output to s0/0/1 w/ dlci 103)
+int s0/0/1
+frame-relay intf-type dce 
+frame-relay route 103 int s0/0/0 301
+
+(EXAMPLE)
+interface Serial0/0/0
+ no ip address
+ encapsulation frame-relay
+ frame-relay intf-type dce
+ frame-relay route 103 interface Serial0/0/1 301
+!
+interface Serial0/0/1
+ no ip address
+ encapsulation frame-relay
+ clock rate 128000
+ frame-relay intf-type dce
+ frame-relay route 301 interface Serial0/0/0 103
+
+show frame-relay route
+
+GRE Tunnels (CISCO) -------------------------------------------------------
+
+int tunnel 0
+ip add 192.168.1.1 255.255.255.252
+tunnel source s0/0/0 !WAN-esque port
+tunnel destination 192.169.12.223 !Destination router exterior ip
+!inverse for other side of tunnel
+
+Logging -------------------------------------------------------
+
+Syslog
+logging host 192.168.1.100 !syslog server ip
+logging trap 4 !level
+
+SNMP
+
+
+Netflow 
+
+int s0/0/0 !port you want to capture traffic on
+ip flow ingress 
+ip flow egress
+ip flow-export destination 192.168.1.10 9996 !collector PC and port
+ip flow-export version 9
+
+
+NTP -------------------------------------------------------
+
+server:
+clock set
+ntp master 5 !stratum number
+clock timezone !word
+
+client:
+ntp server 10.0.0.1 !master ip
+ntp update-calendar !get ntp update
+
+
+
+debug ospf
+undebug all

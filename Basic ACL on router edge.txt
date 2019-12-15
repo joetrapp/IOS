@@ -1,0 +1,3 @@
+ip access-list EDGE
+permit tcp any any est
+permit icmp any any echo-reply

@@ -1,0 +1,51 @@
+Switchport security -------------------------------------------------------
+
+int range f0/1-24
+switchport mode access
+switchport port-security mac-address sticky
+switchport port-security maximum 2
+switchport port-security violation shutdown
+
+Create vlans ---------------------------------------------------------
+
+vlan 10
+vlan 20
+vlan 30
+vlan 40
+vlan 99
+
+Assign ports to vlans ------------------------------------------------
+
+int f0/1
+switchport mode access
+switchport access vlan 10
+
+Assign trunk lines ----------------------------------------------------
+
+int g0/1
+switchport mode trunk
+switchport trunk vlan allowed 10,20,30,40,99 [native]
+
+Switch spanning tree mode (Multi vlan) -------------------------------------------
+
+spanning-tree mode rapid-pvst
+spanning-tree vlan #,#,# [root] [primary/secondary]
+OPTIONAL
+spanning-tree portfast
+spanning-tree bpduguard enable
+
+Etherchannel (NIC teaming) --------------------------------------------------
+
+int ra g0/1-2
+shutdown
+channel-group 1 mode active (LACP)	
+channel-group 1 mode desirable (PAGP-Cisco Proprietery)
+
+int port-channel 1
+switchport mode trunk
+switchport trunk allowed vlan #,# (or switchport trunk native vlan 99)
+int ra g0/1-2
+no shutdown
+
+
+
